@@ -120,6 +120,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "faculty_subjects_faculty_id_fkey"
+            columns: ["faculty_id"]
+            isOneToOne: false
+            referencedRelation: "faculty_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "faculty_subjects_subject_id_fkey"
             columns: ["subject_id"]
             isOneToOne: false
@@ -236,6 +243,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "timetable_entries_faculty_id_fkey"
+            columns: ["faculty_id"]
+            isOneToOne: false
+            referencedRelation: "faculty_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "timetable_entries_subject_id_fkey"
             columns: ["subject_id"]
             isOneToOne: false
@@ -267,7 +281,33 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      faculty_public: {
+        Row: {
+          auth_user_id: string | null
+          department: string | null
+          id: string | null
+          max_classes_per_day: number | null
+          max_hours_per_week: number | null
+          name: string | null
+        }
+        Insert: {
+          auth_user_id?: string | null
+          department?: string | null
+          id?: string | null
+          max_classes_per_day?: number | null
+          max_hours_per_week?: number | null
+          name?: string | null
+        }
+        Update: {
+          auth_user_id?: string | null
+          department?: string | null
+          id?: string | null
+          max_classes_per_day?: number | null
+          max_hours_per_week?: number | null
+          name?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       has_role: {
