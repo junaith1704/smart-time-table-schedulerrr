@@ -1,160 +1,152 @@
 import { useState, useMemo } from "react";
-import { useAppData, TimetableEntry } from "@/store/AppContext";
+import {
+  useClasses, useFaculty, useSubjects, useClassrooms,
+  useFacultySubjects, useTimetableEntries, useReplaceTimetableEntries,
+} from "@/hooks/useTimetableData";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CalendarDays, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { CalendarDays, Loader2, AlertTriangle, Download, Sparkles, FileText } from "lucide-react";
 import { toast } from "sonner";
+import { generateTimetable, DAYS, TIME_SLOTS } from "@/lib/scheduler";
+import { exportTimetablePDF, exportAllClassesPDF } from "@/lib/pdfExport";
 
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-const TIME_SLOTS = ["9:00 - 10:00", "10:00 - 11:00", "11:00 - 12:00", "1:00 - 2:00", "2:00 - 3:00"];
-
-const CELL_COLORS = [
-  "bg-blue-50 border-blue-200",
-  "bg-green-50 border-green-200",
-  "bg-amber-50 border-amber-200",
-  "bg-rose-50 border-rose-200",
-  "bg-violet-50 border-violet-200",
-  "bg-cyan-50 border-cyan-200",
-  "bg-orange-50 border-orange-200",
+const SUBJECT_PALETTE = [
+  "bg-blue-50 border-blue-200 text-blue-900 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-100",
+  "bg-emerald-50 border-emerald-200 text-emerald-900 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-100",
+  "bg-amber-50 border-amber-200 text-amber-900 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-100",
+  "bg-rose-50 border-rose-200 text-rose-900 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-100",
+  "bg-violet-50 border-violet-200 text-violet-900 dark:bg-violet-950/40 dark:border-violet-800 dark:text-violet-100",
+  "bg-cyan-50 border-cyan-200 text-cyan-900 dark:bg-cyan-950/40 dark:border-cyan-800 dark:text-cyan-100",
+  "bg-orange-50 border-orange-200 text-orange-900 dark:bg-orange-950/40 dark:border-orange-800 dark:text-orange-100",
 ];
 
-function getSubjectColor(subject: string, allSubjects: string[]): string {
-  const idx = allSubjects.indexOf(subject);
-  return CELL_COLORS[idx % CELL_COLORS.length];
-}
+const colorFor = (name: string) => {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return SUBJECT_PALETTE[hash % SUBJECT_PALETTE.length];
+};
 
 const TimetablesPage = () => {
-  const { classes, faculty, subjects, classrooms, timetableEntries, setTimetableEntries, lastSaved } = useAppData();
+  const { data: classes = [] } = useClasses();
+  const { data: faculty = [] } = useFaculty();
+  const { data: subjects = [] } = useSubjects();
+  const { data: classrooms = [] } = useClassrooms();
+  const { data: facultySubjects = [] } = useFacultySubjects();
+  const { data: entries = [] } = useTimetableEntries();
+  const replaceEntries = useReplaceTimetableEntries();
+
   const [viewMode, setViewMode] = useState<"class" | "faculty">("class");
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [selectedFacultyId, setSelectedFacultyId] = useState<string>("");
   const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
 
-  const subjectNames = useMemo(() => subjects.map((s) => s.name), [subjects]);
-
-  const filteredEntries = useMemo(() => {
+  const filtered = useMemo(() => {
     if (viewMode === "class" && selectedClassId) {
-      return timetableEntries.filter((e) => e.classId === selectedClassId);
+      return entries.filter((e) => e.class_id === selectedClassId);
     }
     if (viewMode === "faculty" && selectedFacultyId) {
-      const fac = faculty.find((f) => f.id === selectedFacultyId);
-      if (!fac) return [];
-      return timetableEntries.filter((e) => e.faculty === fac.name);
+      return entries.filter((e) => e.faculty_id === selectedFacultyId);
     }
     return [];
-  }, [timetableEntries, viewMode, selectedClassId, selectedFacultyId, faculty]);
+  }, [entries, viewMode, selectedClassId, selectedFacultyId]);
 
-  const getEntry = (day: string, slot: string) => filteredEntries.find((e) => e.day === day && e.timeSlot === slot);
+  const getEntry = (day: string, slot: string) => filtered.find((e) => e.day === day && e.time_slot === slot);
 
-  const generateTimetable = () => {
-    if (classes.length === 0 || faculty.length === 0 || subjects.length === 0 || classrooms.length === 0) {
-      setError("Please add at least one class, faculty, subject, and classroom before generating.");
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setWarnings([]);
+    await new Promise((r) => setTimeout(r, 350));
+
+    const schedFaculty = faculty.map((f) => ({
+      id: f.id,
+      name: f.name,
+      max_hours_per_week: f.max_hours_per_week,
+      max_classes_per_day: f.max_classes_per_day,
+      subjectIds: facultySubjects.filter((m) => m.faculty_id === f.id).map((m) => m.subject_id),
+    }));
+
+    const result = generateTimetable(
+      classes.map((c) => ({ id: c.id, name: c.name })),
+      subjects.map((s) => ({ id: s.id, name: s.name })),
+      schedFaculty,
+      classrooms.map((r) => ({ id: r.id, name: r.name })),
+    );
+
+    if (result.error) {
+      toast.error(result.error);
+      setGenerating(false);
       return;
     }
-    setGenerating(true);
-    setError(null);
 
-    setTimeout(() => {
-      try {
-        const allEntries: TimetableEntry[] = [];
-        // Track occupancy: key = `${day}-${slot}` -> Set of faculty names and room names
-        const facultyOccupancy: Record<string, Set<string>> = {};
-        const roomOccupancy: Record<string, Set<string>> = {};
+    setWarnings(result.warnings);
 
-        for (const day of DAYS) {
-          for (const slot of TIME_SLOTS) {
-            const key = `${day}-${slot}`;
-            facultyOccupancy[key] = new Set();
-            roomOccupancy[key] = new Set();
-          }
+    replaceEntries.mutate(result.entries, {
+      onSuccess: () => {
+        toast.success(`Timetable generated — ${result.entries.length} slots filled`);
+        if (result.warnings.length > 0) {
+          toast.warning(`${result.warnings.length} warnings. Review below.`);
         }
+      },
+      onSettled: () => setGenerating(false),
+    });
+  };
 
-        // Load existing entries into occupancy maps
-        const existingOtherEntries = timetableEntries.filter(
-          (e) => !classes.some((c) => c.id === e.classId) // keep entries for classes not in current list
-        );
+  const handleExportCurrent = () => {
+    if (filtered.length === 0) { toast.error("Nothing to export"); return; }
+    const title = viewMode === "class"
+      ? `Timetable - ${classes.find((c) => c.id === selectedClassId)?.name}`
+      : `Timetable - ${faculty.find((f) => f.id === selectedFacultyId)?.name}`;
+    exportTimetablePDF(title, filtered);
+    toast.success("PDF exported");
+  };
 
-        for (const cls of classes) {
-          const classEntries: TimetableEntry[] = [];
-          let subjectIdx = 0;
-
-          for (const day of DAYS) {
-            for (const slot of TIME_SLOTS) {
-              const key = `${day}-${slot}`;
-              let assigned = false;
-              let attempts = 0;
-              const maxAttempts = faculty.length * classrooms.length * subjects.length;
-
-              while (!assigned && attempts < maxAttempts) {
-                const sub = subjects[subjectIdx % subjects.length];
-                const fac = faculty[Math.floor(Math.random() * faculty.length)];
-                const room = classrooms[Math.floor(Math.random() * classrooms.length)];
-
-                if (!facultyOccupancy[key].has(fac.name) && !roomOccupancy[key].has(room.name)) {
-                  facultyOccupancy[key].add(fac.name);
-                  roomOccupancy[key].add(room.name);
-
-                  classEntries.push({
-                    id: Math.random().toString(36).substring(2, 11),
-                    classId: cls.id,
-                    day,
-                    timeSlot: slot,
-                    subject: sub.name,
-                    faculty: fac.name,
-                    classroom: room.name,
-                  });
-                  assigned = true;
-                  subjectIdx++;
-                }
-                attempts++;
-              }
-
-              if (!assigned) {
-                setError(`Could not assign a conflict-free slot for ${cls.name} on ${day} at ${slot}. Try adding more faculty or rooms.`);
-                setGenerating(false);
-                return;
-              }
-            }
-          }
-          allEntries.push(...classEntries);
-        }
-
-        setTimetableEntries([...existingOtherEntries, ...allEntries]);
-        toast.success("Timetable generated and saved successfully!");
-      } catch {
-        setError("An unexpected error occurred during generation.");
-      }
-      setGenerating(false);
-    }, 500);
+  const handleExportAll = () => {
+    if (classes.length === 0 || entries.length === 0) { toast.error("Generate a timetable first"); return; }
+    exportAllClassesPDF(classes.map((c) => ({ id: c.id, name: c.name })), entries);
+    toast.success("All-classes PDF exported");
   };
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Timetables</h1>
-          {lastSaved && (
-            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-              <CheckCircle2 className="h-3 w-3 text-success" /> Last saved: {lastSaved}
-            </p>
-          )}
-        </div>
-        <Button onClick={generateTimetable} disabled={generating}>
-          {generating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CalendarDays className="h-4 w-4 mr-2" />}
-          {generating ? "Generating..." : "Generate All Timetables"}
-        </Button>
-      </div>
-
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4 mb-4 flex items-start gap-2 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-          <span>{error}</span>
+    <div className="space-y-6 animate-in fade-in duration-300 relative">
+      {generating && (
+        <div className="fixed inset-0 bg-background/70 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-card border rounded-xl p-8 shadow-xl flex flex-col items-center gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="font-medium">Generating timetable…</p>
+            <p className="text-xs text-muted-foreground">Solving constraints</p>
+          </div>
         </div>
       )}
 
-      {/* Controls */}
-      <div className="bg-card border rounded-lg p-4 mb-6 flex flex-wrap gap-4 items-end">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-lg bg-primary/10 text-primary"><CalendarDays className="h-5 w-5" /></div>
+          <h1 className="text-2xl font-bold">Timetables</h1>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={handleExportAll}>
+            <FileText className="h-4 w-4 mr-2" />Export All Classes
+          </Button>
+          <Button onClick={handleGenerate} disabled={generating}>
+            <Sparkles className="h-4 w-4 mr-2" />
+            {generating ? "Generating…" : "Generate Timetable"}
+          </Button>
+        </div>
+      </div>
+
+      {warnings.length > 0 && (
+        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-1">
+          <div className="flex items-center gap-2 font-medium text-amber-900 dark:text-amber-200 text-sm">
+            <AlertTriangle className="h-4 w-4" /> {warnings.length} scheduling warning{warnings.length === 1 ? "" : "s"}
+          </div>
+          <ul className="text-xs text-amber-800 dark:text-amber-300 list-disc list-inside space-y-0.5 max-h-32 overflow-auto">
+            {warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </div>
+      )}
+
+      <div className="bg-card border rounded-xl p-4 flex flex-wrap gap-4 items-end shadow-sm">
         <div className="min-w-[160px]">
           <label className="text-xs font-medium text-muted-foreground mb-1 block">View By</label>
           <Select value={viewMode} onValueChange={(v: "class" | "faculty") => setViewMode(v)}>
@@ -172,9 +164,7 @@ const TimetablesPage = () => {
             <Select value={selectedClassId} onValueChange={setSelectedClassId}>
               <SelectTrigger><SelectValue placeholder="Choose a class" /></SelectTrigger>
               <SelectContent>
-                {classes.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                ))}
+                {classes.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -186,22 +176,25 @@ const TimetablesPage = () => {
             <Select value={selectedFacultyId} onValueChange={setSelectedFacultyId}>
               <SelectTrigger><SelectValue placeholder="Choose faculty" /></SelectTrigger>
               <SelectContent>
-                {faculty.map((f) => (
-                  <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
-                ))}
+                {faculty.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
         )}
+
+        {filtered.length > 0 && (
+          <Button variant="outline" size="sm" onClick={handleExportCurrent} className="ml-auto">
+            <Download className="h-4 w-4 mr-2" />Export PDF
+          </Button>
+        )}
       </div>
 
-      {/* Timetable Grid */}
       {((viewMode === "class" && selectedClassId) || (viewMode === "faculty" && selectedFacultyId)) ? (
-        <div className="bg-card border rounded-lg overflow-x-auto">
+        <div className="bg-card border rounded-xl overflow-x-auto shadow-sm">
           <table className="w-full text-sm min-w-[700px]">
             <thead>
-              <tr className="bg-muted">
-                <th className="px-4 py-3 text-left text-muted-foreground font-medium w-24">Day</th>
+              <tr className="bg-muted/50">
+                <th className="px-4 py-3 text-left text-muted-foreground font-medium w-28">Day</th>
                 {TIME_SLOTS.map((slot) => (
                   <th key={slot} className="px-3 py-3 text-center text-muted-foreground font-medium">{slot}</th>
                 ))}
@@ -210,24 +203,24 @@ const TimetablesPage = () => {
             <tbody>
               {DAYS.map((day) => (
                 <tr key={day} className="border-t">
-                  <td className="px-4 py-3 font-medium text-foreground">{day}</td>
+                  <td className="px-4 py-3 font-semibold">{day}</td>
                   {TIME_SLOTS.map((slot) => {
                     const entry = getEntry(day, slot);
                     return (
                       <td key={slot} className="px-2 py-2">
                         {entry ? (
-                          <div className={`rounded-md border p-2.5 ${getSubjectColor(entry.subject, subjectNames)}`}>
-                            <p className="font-semibold text-foreground text-xs leading-tight">{entry.subject}</p>
-                            <p className="text-muted-foreground text-[11px] mt-1">{entry.faculty}</p>
-                            <p className="text-muted-foreground text-[11px]">{entry.classroom}</p>
+                          <div className={`rounded-lg border p-2.5 ${colorFor(entry.subject_name)} transition-transform hover:scale-[1.02]`}>
+                            <p className="font-semibold text-xs leading-tight">{entry.subject_name}</p>
+                            <p className="text-[11px] opacity-75 mt-1">{entry.faculty_name}</p>
+                            <p className="text-[11px] opacity-75">{entry.classroom_name}</p>
                             {viewMode === "faculty" && (
-                              <p className="text-primary text-[11px] font-medium mt-0.5">
-                                {classes.find((c) => c.id === entry.classId)?.name}
+                              <p className="text-[11px] font-medium mt-0.5 opacity-90">
+                                {classes.find((c) => c.id === entry.class_id)?.name}
                               </p>
                             )}
                           </div>
                         ) : (
-                          <div className="rounded-md border border-dashed p-2.5 text-center text-muted-foreground text-xs">—</div>
+                          <div className="rounded-lg border border-dashed p-2.5 text-center text-muted-foreground text-xs">—</div>
                         )}
                       </td>
                     );
@@ -238,7 +231,7 @@ const TimetablesPage = () => {
           </table>
         </div>
       ) : (
-        <div className="bg-card border rounded-lg p-12 text-center text-muted-foreground">
+        <div className="bg-card border rounded-xl p-12 text-center text-muted-foreground shadow-sm">
           <CalendarDays className="h-12 w-12 mx-auto mb-3 opacity-30" />
           <p className="text-sm">Select a {viewMode} to view the timetable.</p>
         </div>
