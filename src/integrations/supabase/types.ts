@@ -14,16 +14,272 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      classes: {
+        Row: {
+          created_at: string
+          department: string
+          id: string
+          name: string
+          section: string
+          year: number
+        }
+        Insert: {
+          created_at?: string
+          department: string
+          id?: string
+          name: string
+          section: string
+          year: number
+        }
+        Update: {
+          created_at?: string
+          department?: string
+          id?: string
+          name?: string
+          section?: string
+          year?: number
+        }
+        Relationships: []
+      }
+      classrooms: {
+        Row: {
+          capacity: number
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          capacity?: number
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          capacity?: number
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      faculty: {
+        Row: {
+          auth_user_id: string | null
+          created_at: string
+          department: string
+          email: string | null
+          id: string
+          max_classes_per_day: number
+          max_hours_per_week: number
+          name: string
+        }
+        Insert: {
+          auth_user_id?: string | null
+          created_at?: string
+          department: string
+          email?: string | null
+          id?: string
+          max_classes_per_day?: number
+          max_hours_per_week?: number
+          name: string
+        }
+        Update: {
+          auth_user_id?: string | null
+          created_at?: string
+          department?: string
+          email?: string | null
+          id?: string
+          max_classes_per_day?: number
+          max_hours_per_week?: number
+          name?: string
+        }
+        Relationships: []
+      }
+      faculty_subjects: {
+        Row: {
+          faculty_id: string
+          id: string
+          subject_id: string
+        }
+        Insert: {
+          faculty_id: string
+          id?: string
+          subject_id: string
+        }
+        Update: {
+          faculty_id?: string
+          id?: string
+          subject_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "faculty_subjects_faculty_id_fkey"
+            columns: ["faculty_id"]
+            isOneToOne: false
+            referencedRelation: "faculty"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "faculty_subjects_subject_id_fkey"
+            columns: ["subject_id"]
+            isOneToOne: false
+            referencedRelation: "subjects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string
+          full_name: string | null
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          full_name?: string | null
+          id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          full_name?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
+      subjects: {
+        Row: {
+          code: string
+          created_at: string
+          department: string
+          id: string
+          name: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          department: string
+          id?: string
+          name: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          department?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      timetable_entries: {
+        Row: {
+          class_id: string
+          classroom_id: string | null
+          classroom_name: string
+          created_at: string
+          day: string
+          faculty_id: string | null
+          faculty_name: string
+          id: string
+          subject_id: string | null
+          subject_name: string
+          time_slot: string
+        }
+        Insert: {
+          class_id: string
+          classroom_id?: string | null
+          classroom_name: string
+          created_at?: string
+          day: string
+          faculty_id?: string | null
+          faculty_name: string
+          id?: string
+          subject_id?: string | null
+          subject_name: string
+          time_slot: string
+        }
+        Update: {
+          class_id?: string
+          classroom_id?: string | null
+          classroom_name?: string
+          created_at?: string
+          day?: string
+          faculty_id?: string | null
+          faculty_name?: string
+          id?: string
+          subject_id?: string | null
+          subject_name?: string
+          time_slot?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "timetable_entries_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timetable_entries_classroom_id_fkey"
+            columns: ["classroom_id"]
+            isOneToOne: false
+            referencedRelation: "classrooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timetable_entries_faculty_id_fkey"
+            columns: ["faculty_id"]
+            isOneToOne: false
+            referencedRelation: "faculty"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timetable_entries_subject_id_fkey"
+            columns: ["subject_id"]
+            isOneToOne: false
+            referencedRelation: "subjects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "teacher"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +406,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "teacher"],
+    },
   },
 } as const
