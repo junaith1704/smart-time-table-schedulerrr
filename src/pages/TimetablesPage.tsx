@@ -1,13 +1,15 @@
 import { useState, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useClasses, useFaculty, useSubjects, useClassrooms,
-  useFacultySubjects, useTimetableEntries, useReplaceTimetableEntries,
+  useTimetableEntries,
 } from "@/hooks/useTimetableData";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CalendarDays, Loader2, AlertTriangle, Download, Sparkles, FileText } from "lucide-react";
 import { toast } from "sonner";
-import { generateTimetable, DAYS, TIME_SLOTS } from "@/lib/scheduler";
+import { supabase } from "@/integrations/supabase/client";
+import { DAYS, TIME_SLOTS } from "@/lib/scheduler";
 import { exportTimetablePDF, exportAllClassesPDF } from "@/lib/pdfExport";
 
 const SUBJECT_PALETTE = [
@@ -31,9 +33,8 @@ const TimetablesPage = () => {
   const { data: faculty = [] } = useFaculty();
   const { data: subjects = [] } = useSubjects();
   const { data: classrooms = [] } = useClassrooms();
-  const { data: facultySubjects = [] } = useFacultySubjects();
   const { data: entries = [] } = useTimetableEntries();
-  const replaceEntries = useReplaceTimetableEntries();
+  const qc = useQueryClient();
 
   const [viewMode, setViewMode] = useState<"class" | "faculty">("class");
   const [selectedClassId, setSelectedClassId] = useState<string>("");
@@ -56,40 +57,27 @@ const TimetablesPage = () => {
   const handleGenerate = async () => {
     setGenerating(true);
     setWarnings([]);
-    await new Promise((r) => setTimeout(r, 350));
-
-    const schedFaculty = faculty.map((f) => ({
-      id: f.id,
-      name: f.name,
-      max_hours_per_week: f.max_hours_per_week,
-      max_classes_per_day: f.max_classes_per_day,
-      subjectIds: facultySubjects.filter((m) => m.faculty_id === f.id).map((m) => m.subject_id),
-    }));
-
-    const result = generateTimetable(
-      classes.map((c) => ({ id: c.id, name: c.name })),
-      subjects.map((s) => ({ id: s.id, name: s.name })),
-      schedFaculty,
-      classrooms.map((r) => ({ id: r.id, name: r.name })),
-    );
-
-    if (result.error) {
-      toast.error(result.error);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-timetable", { body: {} });
+      if (error) throw error;
+      if (data?.error) {
+        toast.error(data.error);
+        return;
+      }
+      const generatedEntries = (data?.entries ?? []) as Array<{ class_id: string }>;
+      const generatedWarnings = (data?.warnings ?? []) as string[];
+      setWarnings(generatedWarnings);
+      await qc.invalidateQueries({ queryKey: ["timetable_entries"] });
+      toast.success(`Timetable generated — ${generatedEntries.length} slots filled`);
+      if (generatedWarnings.length > 0) {
+        toast.warning(`${generatedWarnings.length} warnings. Review below.`);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to generate timetable";
+      toast.error(msg);
+    } finally {
       setGenerating(false);
-      return;
     }
-
-    setWarnings(result.warnings);
-
-    replaceEntries.mutate(result.entries, {
-      onSuccess: () => {
-        toast.success(`Timetable generated — ${result.entries.length} slots filled`);
-        if (result.warnings.length > 0) {
-          toast.warning(`${result.warnings.length} warnings. Review below.`);
-        }
-      },
-      onSettled: () => setGenerating(false),
-    });
   };
 
   const handleExportCurrent = () => {
