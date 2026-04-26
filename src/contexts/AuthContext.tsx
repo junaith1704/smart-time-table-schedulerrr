@@ -64,11 +64,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, fullName: string) => {
+    // Prefer VITE_SITE_URL (set in Vercel/Netlify env), fall back to current origin.
+    // This avoids hardcoding any Lovable/Vercel URL in the codebase.
+    const siteUrl =
+      (import.meta.env.VITE_SITE_URL as string | undefined)?.replace(/\/$/, "") ||
+      window.location.origin;
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/`,
+        emailRedirectTo: `${siteUrl}/`,
         data: { full_name: fullName },
       },
     });
