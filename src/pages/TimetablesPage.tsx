@@ -1,13 +1,15 @@
 import { useState, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useClasses, useFaculty, useSubjects, useClassrooms,
-  useFacultySubjects, useTimetableEntries, useReplaceTimetableEntries,
+  useTimetableEntries,
 } from "@/hooks/useTimetableData";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CalendarDays, Loader2, AlertTriangle, Download, Sparkles, FileText } from "lucide-react";
 import { toast } from "sonner";
-import { generateTimetable, DAYS, TIME_SLOTS } from "@/lib/scheduler";
+import { supabase } from "@/integrations/supabase/client";
+import { DAYS, TIME_SLOTS } from "@/lib/scheduler";
 import { exportTimetablePDF, exportAllClassesPDF } from "@/lib/pdfExport";
 
 const SUBJECT_PALETTE = [
